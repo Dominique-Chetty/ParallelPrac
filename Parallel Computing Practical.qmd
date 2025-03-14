@@ -1,0 +1,191 @@
+---
+title: "Parallel Computing Practical"
+author: "Dominique Chetty"
+format: html
+editor: visual
+---
+
+```{r, include=FALSE}
+library(foreach)
+library(doParallel)
+library(tidyverse)
+library(kableExtra)
+library(MASS)
+library(iterators)
+```
+
+Here is the link to my github:
+
+## Question 1
+
+```{r}
+c1 <- makeCluster(7) # 7 because i have 8 cores (so 8-1)
+registerDoParallel(c1)
+
+set.seed(20) # random seed for reproducibility
+
+#repeats 100 times using parallel computing
+# generates 100 samples from the random exponential distribution
+# stores the mean and variance of each of the samples
+results <- foreach(i = 1:100, .combine = rbind) %dopar% {
+  sdata <- rexp(100, rate = 1)
+  s_mean <- round(mean(sdata), 4)
+  s_var <- round(var(sdata), 4)
+  c(s_mean, s_var)
+  
+}
+
+stopCluster(c1) # stops the cluster from continuing parallel computing
+
+#converts result into a data frame so that it can be displayed as a table
+results <- as.data.frame(results) 
+names(results) <- c("Mean", "Variance")
+
+kable(results, caption = "Table 1: Mean and Variances of samples from the Exponential Distribution")
+```
+
+## Question 2
+
+```{r}
+c2 <- makeCluster(7) # 7 because i have 8 cores (so 8-1)
+registerDoParallel(c2)
+
+p <- system.time({
+  set.seed(20) # random seed for reproducibility
+
+  galaxies_boot <- foreach(i = 1:1000, .combine = c, .packages = 'MASS') %dopar% {
+    s_median <- median(sample(galaxies, replace = FALSE))
+    s_median
+}
+})
+
+
+stopCluster(c2)
+
+galaxies_boot <- as.data.frame(galaxies_boot) 
+names(galaxies_boot) <- "Medians"
+
+rows <- nrow(galaxies_boot)
+
+kable(head(galaxies_boot), caption = "Table 2: Bootstrapped Medians from the galaxies data")
+
+```
+
+Only the first 6 rows of bootstrapped medians have been displayed, however the total number of bootstrapped medians stored is `r rows`
+
+```{r}
+###### Perform question 2 using serial programming
+
+s <- system.time({
+  set.seed(20) # random seed for reproducibility
+
+  galaxies_boot_series <- foreach(i = 1:1000, .combine = c, .packages = 'MASS') %do% {
+    s_median <- median(sample(galaxies, replace = FALSE))
+    s_median
+}
+})
+
+galaxies_boot_series <- as.data.frame(galaxies_boot_series) 
+names(galaxies_boot_series) <- "Medians"
+
+kable(head(galaxies_boot_series), caption = "Table 3: Bootstrapped Medians from the galaxies data")
+```
+
+Only the first 6 rows of bootstrapped medians have been displayed, however the total number of bootstrapped medians stored is `r rows`
+
+```{r}
+comp_time <- data.frame(Type = c("Serial", "Parallel"),
+                        User = c(s["user.self"], p["user.self"]),
+                        System = c(s["sys.self"], p["sys.self"]),
+                        Elapsed = c(s["elapsed"], p["elapsed"]))
+
+kable(comp_time, caption = "Table 4: Comparision of the time it takes to perform serial and parallel computing on the same problem")
+```
+
+From the above results, User takes longer for serial than parallel which means that the amount of time the CPU spent on executing the code is faster for parallel. System is substantially lower for Serial than Parallel which means that the amount of time spent for the operating system to handle the request is faster for serial programming in this example. The time elapsed is bigger for Parallel which means that the total time taken from CPU and system time and potential waiting time is larger for Parallel than serial programming. If the problem was larger than we would expect the parallel elapsed time to be lower than the serial elapsed time.
+
+## Question 3
+
+The following bootstrap percentile confidence intervals were calculated from a sample size of 50 from the exponential distribution with a mean of 1. I have only displayed the first 6 bootstrapped percentile confidence intervals, but there are in total 1000 bootstraps.
+
+```{r}
+c3 <- makeCluster(7)
+registerDoParallel(c3)
+
+set.seed(20)
+
+pCI <- foreach(i = 1:1000, .combine = rbind) %dopar% {
+  sdata <- rexp(n=50, rate = 1)
+  bootstraps <- replicate(n=1000, mean(sample(sdata, replace = TRUE)))
+  ci <- quantile(bootstraps, probs = c(0.025, 0.975))
+  ci
+}
+
+stopCluster(c3)
+
+pCI <- as.data.frame(pCI)
+
+kable(head(pCI), caption = "Table 5: Showing the percentile bootstraps for the 95% confidence level")
+
+```
+
+## Question 4
+
+```{r}
+set.seed(1234)
+
+c4 <-  makeCluster(7)
+registerDoParallel(c4)
+
+f_time <- system.time({
+  # iterates 3 times for the 3 vectors, and each vector will contain 5 random normal variables
+
+  largest_vals <- foreach(it_norm = irnorm( 5, count = 3), .combine = c) %dopar% {
+    round(max(it_norm), 4)
+  }
+})
+
+stopCluster(c4)
+
+largest_vals <- as.list(largest_vals) # converts largest numbers into a list
+
+kable(data.frame(Vector = c(1, 2, 3), 
+                 Maximum = c(largest_vals[[1]], largest_vals[[2]], largest_vals[[3]] )), 
+      caption = "Table 6: Showing the largest values of each vector with 5 randomly generated numbers from the normal distribution") # creates the table
+
+```
+
+## Question 5
+
+The aim of this question is to compare the run time beteen parLapply, foreach and replicate for the problem in question 4.
+
+```{r}
+########### Using parLapply ##############
+
+c5 <- makeCluster(7)
+registerDoParallel(c5)
+
+pl_time <- system.time({
+  set.seed(1234)
+
+  it_lap <- parLapply(c5, 1:3, function(x) rnorm(n=5))
+  max_it_lap <- unlist(lapply(it_lap, function(vec) round(max(vec), 4)))
+})
+
+stopCluster(c5)
+
+############### using replicate ############
+
+r_time <- system.time({
+  largest_vals_replicate <- replicate(3, round(max(rnorm(5, mean = 0, sd = 1)), 4))
+})
+
+############## Comparing the run time ###########
+run_time <- data.frame(Type = c("parLapply", "foreach", "replicate"),
+                        User = c(pl_time["user.self"], f_time["user.self"], r_time["user.self"]),
+                        System = c(pl_time["sys.self"], f_time["sys.self"], r_time["sys.self"]),
+                        Elapsed = c(pl_time["elapsed"], f_time["elapsed"], r_time["elapsed"]))
+
+kable(run_time, caption = "Table 7: shows the comparison of time between the different apporaches of taclking the same problem.")
+
+```
