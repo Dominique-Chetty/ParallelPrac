@@ -14,7 +14,7 @@ library(MASS)
 library(iterators)
 ```
 
-Here is the link to my github:
+Here is the link to my github: https://github.com/Dominique-Chetty/ParallelPrac
 
 ## Question 1
 
